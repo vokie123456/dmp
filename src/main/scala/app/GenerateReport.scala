@@ -39,9 +39,195 @@ object GenerateReport {
 //    calculateProvinceCityCount(spark,outputPath)
 
     // 地域分布
-    calculateLocationCount(spark)
+//    calculateLocationCount(spark)
+
+    // 统计终端设备
+    // 1、统计运营商
+//    calculateISPCount(spark)
+    // 2、统计网络类
+//    calculateNetWorkCount(spark)
+    // 3、统计设备类
+//    calculateDevicetypeCount(spark)
+    // 4、统计操作系统类
+//    calculateOsCount(spark)
+
+
+    // 媒体分析
+    calculateAppNameCount(spark)
+
+    // 渠道报表
+
     spark.stop()
 
+  }
+
+  /**
+    * 统计媒体各个指标
+    * @param spark
+    * @return
+    */
+  def calculateAppNameCount(spark: SparkSession) = {
+    // 统计媒体的各个指标
+    val appnameSql = "select " +
+      "appname, " +
+      "sum(case when processnode >= 1 and requestmode = 1 then 1 else 0 end) as original_request_count, " +
+      "sum(case when processnode >= 2 and requestmode = 1 then 1 else 0 end) as effective_request_count, " +
+      "sum(case when processnode = 3 and requestmode = 1 then 1 else 0 end) as ad_request_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as join_biding_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as biding_win_count, " +
+      "round(cast(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as double)" +
+      "/cast(sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as double ),2) as biding_win_rate, " +
+      "sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as show_count, " +
+      "sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as click_count, " +
+      "round(cast(sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as double)" +
+      "/cast(sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as double),2) as click_rate, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then winprice else 0 end)/1000,2) as DSPwinprice, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then adpayment else 0 end)/1000,2) as DSPadpayment " +
+      "from log " +
+      "group by appname"
+
+    val appnameDF = spark.sql(appnameSql)
+    //    requestDF.show(300)
+
+    // 将数据写到mysql中
+    // 创建properties存储数据库相关属性
+    JDBC.createTable("appname_count",appnameDF)
+  }
+
+  /**
+    * 统计操作系统的各个指标
+    * @param spark
+    * @return
+    */
+  def calculateOsCount(spark: SparkSession) = {
+    // 统计设备的各个指标
+    val clientSql = "select  " +
+      "(case when client = 1 then 'android' " +
+      "when client = 2 then 'ios' " +
+      "when client = 3 then 'wp' " +
+      "else '其他' end) as devicetype, " +
+      "sum(case when processnode >= 1 and requestmode = 1 then 1 else 0 end) as original_request_count, " +
+      "sum(case when processnode >= 2 and requestmode = 1 then 1 else 0 end) as effective_request_count, " +
+      "sum(case when processnode = 3 and requestmode = 1 then 1 else 0 end) as ad_request_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as join_biding_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as biding_win_count, " +
+      "round(cast(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as double)" +
+      "/cast(sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as double ),2) as biding_win_rate, " +
+      "sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as show_count, " +
+      "sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as click_count, " +
+      "round(cast(sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as double)" +
+      "/cast(sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as double),2) as click_rate, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then winprice else 0 end)/1000,2) as DSPwinprice, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then adpayment else 0 end)/1000,2) as DSPadpayment " +
+      "from log " +
+      "group by client"
+
+
+    val clientDF = spark.sql(clientSql)
+    //    requestDF.show(300)
+
+    // 将数据写到mysql中
+    // 创建properties存储数据库相关属性
+    JDBC.createTable("os_count",clientDF)
+  }
+
+  /**
+    * 计算设备各个指标
+    * @param spark
+    * @return
+    */
+  def calculateDevicetypeCount(spark: SparkSession) = {
+    // 统计设备的各个指标
+    val devicetypeSql = "select  " +
+      "(case when devicetype = 1 then '手机' " +
+      "when devicetype = 2 then '平板' " +
+      "else '其他' end) as devicetype, " +
+      "sum(case when processnode >= 1 and requestmode = 1 then 1 else 0 end) as original_request_count, " +
+      "sum(case when processnode >= 2 and requestmode = 1 then 1 else 0 end) as effective_request_count, " +
+      "sum(case when processnode = 3 and requestmode = 1 then 1 else 0 end) as ad_request_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as join_biding_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as biding_win_count, " +
+      "round(cast(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as double)" +
+      "/cast(sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as double ),2) as biding_win_rate, " +
+      "sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as show_count, " +
+      "sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as click_count, " +
+      "round(cast(sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as double)" +
+      "/cast(sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as double),2) as click_rate, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then winprice else 0 end)/1000,2) as DSPwinprice, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then adpayment else 0 end)/1000,2) as DSPadpayment " +
+      "from log " +
+      "group by devicetype"
+
+    val devicetypeDF = spark.sql(devicetypeSql)
+    //    requestDF.show(300)
+
+    // 将数据写到mysql中
+    // 创建properties存储数据库相关属性
+    JDBC.createTable("device_count",devicetypeDF)
+  }
+  /**
+    * 统计网络类各指标
+    * @param spark
+    * @return
+    */
+  def calculateNetWorkCount(spark: SparkSession) = {
+    // 统计网络类的各个指标
+    val networkmanagerSql = "select " +
+      "networkmannername, " +
+      "sum(case when processnode >= 1 and requestmode = 1 then 1 else 0 end) as original_request_count, " +
+      "sum(case when processnode >= 2 and requestmode = 1 then 1 else 0 end) as effective_request_count, " +
+      "sum(case when processnode = 3 and requestmode = 1 then 1 else 0 end) as ad_request_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as join_biding_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as biding_win_count, " +
+      "round(cast(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as double)" +
+      "/cast(sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as double ),2) as biding_win_rate, " +
+      "sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as show_count, " +
+      "sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as click_count, " +
+      "round(cast(sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as double)" +
+      "/cast(sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as double),2) as click_rate, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then winprice else 0 end)/1000,2) as DSPwinprice, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then adpayment else 0 end)/1000,2) as DSPadpayment " +
+      "from log " +
+      "group by networkmannername"
+
+    val networkmanagerDF = spark.sql(networkmanagerSql)
+    //    requestDF.show(300)
+
+    // 将数据写到mysql中
+    // 创建properties存储数据库相关属性
+    JDBC.createTable("network_count",networkmanagerDF)
+  }
+
+  /**
+    * 统计运营商的各个指标
+    * @param spark
+    * @return
+    */
+  def calculateISPCount(spark: SparkSession) = {
+    // 统计运营商的各个指标
+    val ISPSql = "select ispname, " +
+      "sum(case when processnode >= 1 and requestmode = 1 then 1 else 0 end) as original_request_count, " +
+      "sum(case when processnode >= 2 and requestmode = 1 then 1 else 0 end) as effective_request_count, " +
+      "sum(case when processnode = 3 and requestmode = 1 then 1 else 0 end) as ad_request_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as join_biding_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as biding_win_count, " +
+      "round(cast(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as double)" +
+      "/cast(sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as double ),2) as biding_win_rate, " +
+      "sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as show_count, " +
+      "sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as click_count, " +
+      "round(cast(sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as double)" +
+      "/cast(sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as double),2) as click_rate, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then winprice else 0 end)/1000,2) as DSPwinprice, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then adpayment else 0 end)/1000,2) as DSPadpayment " +
+      "from log " +
+      "group by ispname"
+
+       val ISPDF = spark.sql(ISPSql)
+//    requestDF.show(300)
+
+    // 将数据写到mysql中
+    // 创建properties存储数据库相关属性
+    JDBC.createTable("isp_count",ISPDF)
   }
 
   /**

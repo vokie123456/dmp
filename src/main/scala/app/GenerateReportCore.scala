@@ -2,10 +2,14 @@ package app
 
 import java.util.Properties
 
+import accumulator.LogAccumulator
+import constant.Constants
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import util.{NumberUtils, StringUtils}
+import utils.{JDBC, SchemaUtils}
 
 object GenerateReportCore {
 
@@ -31,23 +35,121 @@ object GenerateReportCore {
     val df = spark.read.parquet(inputPath)
     val logRDD = df.rdd.cache()
 
+    val logAccumulator = new LogAccumulator
+    spark.sparkContext.register(logAccumulator)
+
 
     // 统计各省市数据量分布情况
 //    calculateProvinceCityCountBySparkCore(spark,logRDD,outputPath)
 
     // 计算地域分布
-    calculateLocationCountBySparkCore(spark,logRDD)
+    calculateLocationCountBySparkCore(spark,logRDD,logAccumulator)
+
+
+    spark.stop()
+  }
+
+
+  /**
+    * 使用sparkcore计算地域分布
+    */
+  def calculateLocationCountBySparkCore(spark: SparkSession, logRDD:RDD[Row],logAccumulator: LogAccumulator): Unit = {
+    // 将提取logRDD中有用的字段
+    val groupedRDD: RDD[(String, Iterable[String])] = logRDD.map(line => {
+      val provincename = line.getString(24)
+      val cityname = line.getString(25)
+      val requestmode = line.getInt(8)
+      val processnode = line.getInt(35)
+      val iseffective = line.getInt(30)
+      val isbilling = line.getInt(31)
+      val isbid = line.getInt(39)
+      val iswin = line.getInt(42)
+      val adorderid = line.getInt(2)
+      val winprice = line.getDouble(41)
+      val adpayment = line.getDouble(75)
+
+      // 拼接字段
+      val provinceCityName = provincename + "_" + cityname
+      val filterCondition = Constants.REQUESTMODE+"="+requestmode+"|"+Constants.PROCESSNODE + "=" + processnode + "|" +
+        Constants.ISEFFECTIVE + "=" + iseffective + "|" + Constants.ISBILLING + "=" + isbilling + "|" +
+        Constants.ISBID + "=" + isbid + "|" + Constants.ISWIN + "=" + iswin + "|" + Constants.ADORDEERID + "=" + adorderid+ "|"+
+        Constants.WINPRICE+"="+winprice+"|"+ Constants.ADPAYMENT+"="+adpayment
+
+      (provinceCityName, filterCondition)
+
+    }).groupByKey
+
+    val accumulatorRDD = filterAndAccumulator(spark,groupedRDD,logAccumulator)
+
+    // 将累加后的字段拆分出来,并使用Row进行封装
+    val provinceCityRowRDD: RDD[Row] = accumulatorRDD.map(tup => {
+      val provinceCityname = tup._1.split("_")
+      val provincename = provinceCityname(0)
+      val cityname = provinceCityname(1)
+
+      val aggrInfo = tup._2
+      val original_request_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.ORIGINAL_REQUEST_COUNT)).toInt
+      val effective_request_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.EFFECTIVE_REQUEST_COUNT)).toInt
+      val ad_request_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.AD_REQUEST_COUNT)).toInt
+      val join_biding_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.JOIN_BIDING_COUNT)).toInt
+      val biding_win_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.BIDING_WIN_COUNT)).toInt
+      val biding_win_rate = NumberUtils.formatDouble(biding_win_count.toDouble / join_biding_count.toDouble, 2)
+      val show_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.SHOW_COUNT)).toInt
+      val click_count = (StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.CLICK_COUNT)).toInt
+      val click_rate = NumberUtils.formatDouble(click_count.toDouble / show_count.toDouble, 2)
+      val DSPwinprice = NumberUtils.formatDouble((StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.DSPWINPRICE)).toDouble / 1000, 2)
+      val DSPadpayment = NumberUtils.formatDouble((StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.DSPADPAYMENT)).toDouble / 1000, 2)
+
+      Row(provincename, cityname, original_request_count, effective_request_count, ad_request_count, join_biding_count, biding_win_count,
+        biding_win_rate, show_count, click_count, click_rate, DSPwinprice, DSPadpayment)
+    })
+
+    val provinceCityCoreDF: DataFrame = spark.createDataFrame(provinceCityRowRDD,SchemaUtils.provinceCitySchema)
+    JDBC.createTable("requestcore",provinceCityCoreDF)
 
 
   }
 
   /**
-    * 使用sparkcore计算地域分布
+    * 根据条件进行过滤，并实现累加
+    * @param spark
+    * @param groupedRDD
+    * @param logAccumulator
     */
-  def calculateLocationCountBySparkCore(spark: SparkSession, logRDD:RDD[Row]): Unit = {
+  def filterAndAccumulator(spark: SparkSession, groupedRDD: RDD[(String, Iterable[String])], logAccumulator: LogAccumulator): RDD[(String, String)] = {
+    val accumulatorRDD: RDD[(String, String)] = groupedRDD.mapValues(itr => {
+      logAccumulator.reset()
+      val filterConditionlist = itr.iterator.toList
+      for (filterCondition <- filterConditionlist) {
+
+        // 使用自定义的工具类从拼接的字符串中取出相关的字段
+        val requestmode = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.REQUESTMODE)).toInt
+        val processnode = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.PROCESSNODE)).toInt
+        val iseffective = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.ISEFFECTIVE)).toInt
+        val isbilling = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.ISBILLING)).toInt
+        val isbid = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.ISBID)).toInt
+        val iswin = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.ISWIN)).toInt
+        val adorderid = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.ADORDEERID)).toInt
+        val winprice = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.WINPRICE)).toDouble
+        val adpayment = (StringUtils.getFieldFromConcatString(filterCondition, "\\|", Constants.ADPAYMENT)).toDouble
+
+
+        if ((requestmode == 1) && (processnode >= 1)) logAccumulator.add(Constants.ORIGINAL_REQUEST_COUNT)
+        if ((requestmode == 1) && (processnode >= 2)) logAccumulator.add(Constants.EFFECTIVE_REQUEST_COUNT)
+        if ((requestmode == 1) && (processnode == 3)) logAccumulator.add(Constants.AD_REQUEST_COUNT)
+        if ((iseffective == 1) && (isbilling == 1) && (isbid == 1)) logAccumulator.add(Constants.JOIN_BIDING_COUNT)
+        if ((iseffective == 1) && (isbilling == 1) && (iswin == 1) && (adorderid != 0)) logAccumulator.add(Constants.BIDING_WIN_COUNT)
+        if ((requestmode == 2) && (iseffective == 1)) logAccumulator.add(Constants.SHOW_COUNT)
+        if ((requestmode == 3) && (iseffective == 1)) logAccumulator.add(Constants.CLICK_COUNT)
+        if ((iseffective == 1) && (isbilling == 1) && (iswin == 1)) logAccumulator.add(Constants.DSPWINPRICE + "_" + winprice)
+        if ((iseffective == 1) && (isbilling == 1) && (iswin == 1)) logAccumulator.add(Constants.DSPADPAYMENT + "_" + adpayment)
+      }
+      logAccumulator.value
+    })
+
+    accumulatorRDD
 
   }
-
 
 
   /**
