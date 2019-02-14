@@ -1,5 +1,6 @@
 package utils
 
+import constant.Constants
 import org.apache.spark.sql.types._
 
 object SchemaUtils {
@@ -91,6 +92,25 @@ object SchemaUtils {
       StructField("callbackdate",StringType,true),
       StructField("channelid",StringType,true),
       StructField("mediatype",IntegerType,true)
+    )
+  )
+
+  // 统计各省市数据量分布情况的schema信息
+  val provinceCitySchema = StructType(
+    Array(
+      StructField(Constants.PROVINCENAME,StringType,true),
+      StructField(Constants.CITYNAME,StringType,true),
+      StructField(Constants.ORIGINAL_REQUEST_COUNT,IntegerType,true),
+      StructField(Constants.EFFECTIVE_REQUEST_COUNT,IntegerType,true),
+      StructField(Constants.AD_REQUEST_COUNT,IntegerType,true),
+      StructField(Constants.JOIN_BIDING_COUNT,IntegerType,true),
+      StructField(Constants.BIDING_WIN_COUNT,IntegerType,true),
+      StructField(Constants.BIDING_WIN_RATE,DoubleType,true),
+      StructField(Constants.SHOW_COUNT,IntegerType,true),
+      StructField(Constants.CLICK_COUNT,IntegerType,true),
+      StructField(Constants.CLICK_RATE,DoubleType,true),
+      StructField(Constants.DSPWINPRICE,DoubleType,true),
+      StructField(Constants.DSPADPAYMENT,DoubleType,true)
     )
   )
 }
