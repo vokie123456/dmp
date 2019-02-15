@@ -113,4 +113,22 @@ object SchemaUtils {
       StructField(Constants.DSPADPAYMENT,DoubleType,true)
     )
   )
+
+  // 统计各app数据量分布的schema信息
+  val appnameSchame = StructType(
+    Array(
+      StructField(Constants.APPNAME,StringType,true),
+      StructField(Constants.ORIGINAL_REQUEST_COUNT,IntegerType,true),
+      StructField(Constants.EFFECTIVE_REQUEST_COUNT,IntegerType,true),
+      StructField(Constants.AD_REQUEST_COUNT,IntegerType,true),
+      StructField(Constants.JOIN_BIDING_COUNT,IntegerType,true),
+      StructField(Constants.BIDING_WIN_COUNT,IntegerType,true),
+      StructField(Constants.BIDING_WIN_RATE,DoubleType,true),
+      StructField(Constants.SHOW_COUNT,IntegerType,true),
+      StructField(Constants.CLICK_COUNT,IntegerType,true),
+      StructField(Constants.CLICK_RATE,DoubleType,true),
+      StructField(Constants.DSPWINPRICE,DoubleType,true),
+      StructField(Constants.DSPADPAYMENT,DoubleType,true)
+    )
+  )
 }
