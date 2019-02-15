@@ -16,6 +16,7 @@ public interface Constants {
     String ADPAYMENT = "adpayment";
 
     // 统计的结果字段
+    String APPNAME = "appname";
     String PROVINCENAME = "provincename";
     String CITYNAME = "cityname";
     String ORIGINAL_REQUEST_COUNT = "original_request_count";
