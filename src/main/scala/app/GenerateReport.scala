@@ -53,14 +53,47 @@ object GenerateReport {
 
 
     // 媒体分析
-    calculateAppNameCount(spark)
+//    calculateAppNameCount(spark)
+
 
     // 渠道报表
+    calculateadplatformprovideridCount(spark)
 
     spark.stop()
 
   }
 
+  /**
+    * 统计渠道的各个指标
+    * @param spark
+    * @return
+    */
+  def calculateadplatformprovideridCount(spark: SparkSession) = {
+    val adplatformsql = "select " +
+      "adplatformproviderid, " +
+      "sum(case when processnode >= 1 and requestmode = 1 then 1 else 0 end) as original_request_count, " +
+      "sum(case when processnode >= 2 and requestmode = 1 then 1 else 0 end) as effective_request_count, " +
+      "sum(case when processnode = 3 and requestmode = 1 then 1 else 0 end) as ad_request_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as join_biding_count, " +
+      "sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as biding_win_count, " +
+      "round(cast(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 and adorderid != 0 then 1 else 0 end) as double)" +
+      "/cast(sum(case when iseffective = 1 and isbilling = 1 and isbid = 1 then 1 else 0 end) as double ),2) as biding_win_rate, " +
+      "sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as show_count, " +
+      "sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as click_count, " +
+      "round(cast(sum(case when processnode = 3 and iseffective = 1 then 1 else 0 end) as double)" +
+      "/cast(sum(case when processnode = 2 and iseffective = 1 then 1 else 0 end) as double),2) as click_rate, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then winprice else 0 end)/1000,2) as DSPwinprice, " +
+      "round(sum(case when iseffective = 1 and isbilling = 1 and iswin = 1 then adpayment else 0 end)/1000,2) as DSPadpayment " +
+      "from log " +
+      "group by adplatformproviderid"
+
+    val adplatformDF = spark.sql(adplatformsql)
+    //    requestDF.show(300)
+
+    // 将数据写到mysql中
+    // 创建properties存储数据库相关属性
+    JDBC.createTable("adplatform_count",adplatformDF)
+  }
   /**
     * 统计媒体各个指标
     * @param spark
