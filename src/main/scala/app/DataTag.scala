@@ -1,5 +1,12 @@
 package app
 
+import constant.Constants
+import org.apache.hadoop.hbase.{HBaseConfiguration, HTableDescriptor, TableName}
+import org.apache.hadoop.hbase.client.{HBaseAdmin, Put}
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable
+import org.apache.hadoop.hbase.mapred.TableOutputFormat
+import org.apache.hadoop.hbase.util.Bytes
+import org.apache.hadoop.mapred.JobConf
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -9,6 +16,7 @@ import tag.{AdTags, AppTags, DeviceTags, KeyWordsTags}
 import scala.collection.mutable.ListBuffer
 
 object DataTag {
+
 
   def main(args: Array[String]): Unit = {
 
@@ -52,7 +60,46 @@ object DataTag {
 
     // 给数据打标签
     val tagRDD =  getDataTag(logRDD,dicMapBroadcast,stopwordsBroadcast)
-    tagRDD.saveAsTextFile(outPath)
+
+    spark2HBase(tagRDD)
+//    tagRDD.saveAsTextFile(outPath)
+
+
+    spark.stop()
+  }
+
+  /**
+    * 将结果标签数据写入到hbase中
+    * @param tagRDD
+    * @return
+    */
+  def spark2HBase(tagRDD:RDD[(String,String)]) = {
+    val hbaseConf = HBaseConfiguration.create()
+    val tablename = "dmp:tags"
+    hbaseConf.set(Constants.zkQuorm, Constants.zkQuormlist)
+    hbaseConf.set(Constants.zkQuormProt,Constants.clientPort)
+    hbaseConf.set("hbase.table.sanity.checks","false")
+
+    val jobconf = new JobConf(hbaseConf)
+    jobconf.setOutputFormat(classOf[TableOutputFormat])
+    jobconf.set(TableOutputFormat.OUTPUT_TABLE, tablename)
+
+    // 如果表不存在则创建表
+    val admin = new HBaseAdmin(hbaseConf)
+    if (!admin.isTableAvailable(tablename)) {
+      val tableDesc = new HTableDescriptor(TableName.valueOf(tablename))
+      admin.createTable(tableDesc)
+    }
+
+    tagRDD.map(tup=>{
+      val put = new Put(Bytes.toBytes(tup._1))
+      put.addColumn(Bytes.toBytes("f1"),Bytes.toBytes("tags"),Bytes.toBytes(tup._2))
+      //转化成RDD[(ImmutableBytesWritable,Put)]类型才能调用saveAsHadoopDataset
+      (new ImmutableBytesWritable, put)
+    }).saveAsHadoopDataset(jobconf)
+
+
+
   }
 
 
@@ -63,7 +110,7 @@ object DataTag {
     * @return
     */
   def getDataTag(logRDD:RDD[Row],dicMapBroadcast: Broadcast[Map[String, String]],stopwordsBroadcast: Broadcast[List[String]]) = {
-    val tagResultRDD: RDD[String] = logRDD.map(line => {
+    val tagResultRDD = logRDD.map(line => {
       val userid = line.getAs[String]("userid")
       val tagList = new ListBuffer[((String, Int))]
       val adTagList = AdTags.makeTages(line)
@@ -79,12 +126,12 @@ object DataTag {
       .map(tup => {
         val resultBuffer = new StringBuffer
         val userId = tup._1
-        resultBuffer.append(userId + " ")
+//        resultBuffer.append(userId + " ")
         val taglist = tup._2
         for (tagTup <- taglist) {
           resultBuffer.append(tagTup._1 + " " + tagTup._2 + " ")
         }
-        resultBuffer.toString
+        (userId,resultBuffer.toString)
       })
     tagResultRDD
   }

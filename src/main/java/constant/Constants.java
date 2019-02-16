@@ -31,6 +31,13 @@ public interface Constants {
     String DSPWINPRICE = "DSPwinprice";
     String DSPADPAYMENT = "DSPadpayment";
 
+    String zkQuorm = "hbase.zookeeper.quorum";
+    // 设置zooKeeper集群地址，
+    String zkQuormlist = "mini4,mini5,mini6";
+    String zkQuormProt = "hbase.zookeeper.property.clientPort";
+    String clientPort = "2181";
+
+
 
 
 }
