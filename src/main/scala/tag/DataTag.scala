@@ -153,8 +153,8 @@ object DataTag {
     }).reduceByKey(reducefunc)
       .map(tup => {
         val resultBuffer = new StringBuffer
-        val userId = tup._1+" "
-        resultBuffer.append(userId)
+        val userId = tup._1
+//        resultBuffer.append(userId)
         val taglist = tup._2
         for (tagTup <- taglist) {
           resultBuffer.append(tagTup._1 + ":" + tagTup._2 + " ")
