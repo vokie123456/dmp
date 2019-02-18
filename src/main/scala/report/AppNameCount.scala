@@ -1,4 +1,4 @@
-package app
+package report
 
 import accumulator.LogAccumulator
 import constant.Constants
