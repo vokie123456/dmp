@@ -1,22 +1,24 @@
-package app
+package tag
 
 import constant.Constants
-import org.apache.hadoop.hbase.{HBaseConfiguration, HColumnDescriptor, HTableDescriptor, TableName}
 import org.apache.hadoop.hbase.client.{HBaseAdmin, Put}
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.mapred.TableOutputFormat
 import org.apache.hadoop.hbase.util.Bytes
+import org.apache.hadoop.hbase.{HBaseConfiguration, HColumnDescriptor, HTableDescriptor, TableName}
 import org.apache.hadoop.mapred.JobConf
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SparkSession}
-import tag._
+import utils.{JedisPools, TagUtils}
 
 import scala.collection.mutable.ListBuffer
 
+/**
+  * 将数据打标签，并对标签进行整合
+  */
 object DataTag {
-
 
   def main(args: Array[String]): Unit = {
 
@@ -40,7 +42,10 @@ object DataTag {
 
     val sc = spark.sparkContext
     val df = spark.read.parquet(inputPath)
-    val logRDD = df.rdd.cache()
+
+    // 过滤需要的userid，因为userid很多，只需要过滤出userId不全为空的数据
+    val filteredDF = df.filter(TagUtils.hasneedOneUserId)
+    val logRDD = filteredDF.rdd.cache()
 
     // 读取字典文件
     val dicMap = sc.textFile(appdisctPath)
@@ -62,7 +67,7 @@ object DataTag {
     val tagRDD =  getDataTag(logRDD,dicMapBroadcast,stopwordsBroadcast)
 
     spark2HBase(tagRDD,day)
-    tagRDD.saveAsTextFile(outPath)
+//    tagRDD.saveAsTextFile(outPath)
 
 
     spark.stop()
@@ -115,29 +120,47 @@ object DataTag {
     * @return
     */
   def getDataTag(logRDD:RDD[Row],dicMapBroadcast: Broadcast[Map[String, String]],stopwordsBroadcast: Broadcast[List[String]]) = {
-    val tagResultRDD = logRDD.map(line => {
-      val userid = line.getAs[String]("userid")
-      val tagList = new ListBuffer[((String, Int))]
-      val adTagList = AdTags.makeTages(line)
-      val appTagList = AppTags.makeTages(line, dicMapBroadcast)
-      val deviceTagList = DeviceTags.makeTages(line)
-      val keywordsTagList = KeyWordsTags.makeTages(line, stopwordsBroadcast)
-      val areaTagList = AreaTags.makeTages(line)
+    val tagResultRDD = logRDD.mapPartitions(itr=>{
+      val jedis = JedisPools.getJedis()
+      itr.map(
+        line => {
+          // 处理一下userId，只拿到第一个不为空的userId作为这条数据的用户标识（userId）
+          val userId = TagUtils.getAnyOneUserId(line)
+          val tagList = new ListBuffer[((String, Int))]
+          // 根据每一条数据  打上对应的标签信息（7种标签）
+          // 开始打标签
+          // 广告标签和渠道
+          val adTagList = AdTags.makeTages(line)
+          // APP标签
+          val appTagList = AppTags.makeTages(line, dicMapBroadcast)
+          // 设备
+          val deviceTagList = DeviceTags.makeTages(line)
+          // 关键字
+          val keywordsTagList = KeyWordsTags.makeTages(line, stopwordsBroadcast)
+          // 地域标签
+          val areaTagList = AreaTags.makeTages(line)
+          // 商圈标签
+          val buinessTagList = TagsBusiness.makeTages(line,jedis)
+          println(buinessTagList)
 
-      tagList ++= (adTagList ++ appTagList ++ deviceTagList ++ keywordsTagList ++ areaTagList)
 
-      (userid, tagList)
+          tagList ++= (adTagList ++ appTagList ++ deviceTagList ++ keywordsTagList ++ areaTagList++buinessTagList)
 
+          (userId, tagList)
+
+        }
+      )
     }).reduceByKey(reducefunc)
       .map(tup => {
         val resultBuffer = new StringBuffer
         val userId = tup._1+" "
-//        resultBuffer.append(userId + " ")
+        resultBuffer.append(userId)
         val taglist = tup._2
         for (tagTup <- taglist) {
           resultBuffer.append(tagTup._1 + ":" + tagTup._2 + " ")
         }
         (userId,resultBuffer.toString)
+//        resultBuffer.toString
       })
     tagResultRDD
   }
@@ -158,6 +181,7 @@ object DataTag {
           if (list2elem._1.equals(list1elem._1)){
             taglist += ((list1elem._1,list1elem._2+list2elem._2))
             flag = false
+
             break
           }
         }
@@ -178,10 +202,6 @@ object DataTag {
         taglist += elem
       }
     }
-
-
-
-
 
     taglist
   }
