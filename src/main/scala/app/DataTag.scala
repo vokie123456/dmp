@@ -1,7 +1,7 @@
 package app
 
 import constant.Constants
-import org.apache.hadoop.hbase.{HBaseConfiguration, HTableDescriptor, TableName}
+import org.apache.hadoop.hbase.{HBaseConfiguration, HColumnDescriptor, HTableDescriptor, TableName}
 import org.apache.hadoop.hbase.client.{HBaseAdmin, Put}
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import org.apache.hadoop.hbase.mapred.TableOutputFormat
@@ -11,7 +11,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SparkSession}
-import tag.{AdTags, AppTags, DeviceTags, KeyWordsTags}
+import tag._
 
 import scala.collection.mutable.ListBuffer
 
@@ -21,13 +21,13 @@ object DataTag {
   def main(args: Array[String]): Unit = {
 
     // 模拟企业级编程 首先判断目录是否为空
-    if(args.length!=4){
+    if(args.length!=5){
       println("目录不正确，退出程序")
       sys.exit()
     }
 
     // 创建一个集合存储输入输出目录
-    val Array(inputPath,appdisctPath,stopwordsPath,outPath) = args
+    val Array(inputPath,appdisctPath,stopwordsPath,outPath,day) = args
 
     val conf = new SparkConf()
       .setAppName(s"${this.getClass.getSimpleName}")
@@ -61,8 +61,8 @@ object DataTag {
     // 给数据打标签
     val tagRDD =  getDataTag(logRDD,dicMapBroadcast,stopwordsBroadcast)
 
-    spark2HBase(tagRDD)
-//    tagRDD.saveAsTextFile(outPath)
+    spark2HBase(tagRDD,day)
+    tagRDD.saveAsTextFile(outPath)
 
 
     spark.stop()
@@ -73,7 +73,7 @@ object DataTag {
     * @param tagRDD
     * @return
     */
-  def spark2HBase(tagRDD:RDD[(String,String)]) = {
+  def spark2HBase(tagRDD:RDD[(String,String)],day:String) = {
     val hbaseConf = HBaseConfiguration.create()
     val tablename = "dmp:tags"
     hbaseConf.set(Constants.zkQuorm, Constants.zkQuormlist)
@@ -83,17 +83,22 @@ object DataTag {
     val jobconf = new JobConf(hbaseConf)
     jobconf.setOutputFormat(classOf[TableOutputFormat])
     jobconf.set(TableOutputFormat.OUTPUT_TABLE, tablename)
-
+    // 创建一个列簇
+    val columnDescriptor = new HColumnDescriptor("tags")
     // 如果表不存在则创建表
     val admin = new HBaseAdmin(hbaseConf)
     if (!admin.isTableAvailable(tablename)) {
       val tableDesc = new HTableDescriptor(TableName.valueOf(tablename))
+      tableDesc.addFamily(columnDescriptor)
       admin.createTable(tableDesc)
     }
 
+
+
     tagRDD.map(tup=>{
       val put = new Put(Bytes.toBytes(tup._1))
-      put.addColumn(Bytes.toBytes("f1"),Bytes.toBytes("tags"),Bytes.toBytes(tup._2))
+      put.addImmutable(Bytes.toBytes("tags"), Bytes.toBytes(s"$day"), Bytes.toBytes(tup._2))
+
       //转化成RDD[(ImmutableBytesWritable,Put)]类型才能调用saveAsHadoopDataset
       (new ImmutableBytesWritable, put)
     }).saveAsHadoopDataset(jobconf)
@@ -117,19 +122,20 @@ object DataTag {
       val appTagList = AppTags.makeTages(line, dicMapBroadcast)
       val deviceTagList = DeviceTags.makeTages(line)
       val keywordsTagList = KeyWordsTags.makeTages(line, stopwordsBroadcast)
+      val areaTagList = AreaTags.makeTages(line)
 
-      tagList ++= (adTagList ++ appTagList ++ deviceTagList ++ keywordsTagList)
+      tagList ++= (adTagList ++ appTagList ++ deviceTagList ++ keywordsTagList ++ areaTagList)
 
       (userid, tagList)
 
     }).reduceByKey(reducefunc)
       .map(tup => {
         val resultBuffer = new StringBuffer
-        val userId = tup._1
+        val userId = tup._1+" "
 //        resultBuffer.append(userId + " ")
         val taglist = tup._2
         for (tagTup <- taglist) {
-          resultBuffer.append(tagTup._1 + " " + tagTup._2 + " ")
+          resultBuffer.append(tagTup._1 + ":" + tagTup._2 + " ")
         }
         (userId,resultBuffer.toString)
       })

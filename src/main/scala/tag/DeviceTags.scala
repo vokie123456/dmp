@@ -29,28 +29,26 @@ object DeviceTags extends Tags {
 
     // 获取联网方式
     val networkmannername = line.getAs[String]("networkmannername")
-    if (StringUtils.isNotBlank(networkmannername)){
-      networkmannername match {
+
+    networkmannername match {
         case "WIFI" => list += (("D00020001",1))
         case "4G" => list += (("D00020002",1))
         case "3G" => list += (("D00020003",1))
         case "2G" => list += (("D00020004",1))
         case _ => list += (("D00020005",1))
       }
-    }
+
 
 
     // 获取运营商
     val ispname = line.getAs[String]("ispname")
-    if (StringUtils.isNotBlank(ispname)){
-      ispname match{
-        case "移动" => list += (("D00030001",1))
-        case "联通" => list += (("D00030002",1))
-        case "电信" => list += (("D00030003",1))
-        case _ => list += (("D00030004",1))
+    ispname match{
+      case "移动" => list += (("D00030001",1))
+      case "联通" => list += (("D00030002",1))
+      case "电信" => list += (("D00030003",1))
+      case _ => list += (("D00030004",1))
 
 
-      }
     }
     list
   }
